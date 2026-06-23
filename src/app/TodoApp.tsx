@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+// 1. クォーテーションの閉じ忘れを修正
+import { supabase } from "@/utils/supabase";
 
 type Todo = {
   id: number;
@@ -19,37 +21,42 @@ export default function TodoApp() {
   const [inputText, setInputText] = useState("");
   const [inputDate, setInputDate] = useState("");
   const [showCompleted, setShowCompleted] = useState(true);
-  const [todos, setTodos] = useState<Todo[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("my-todos");
-      return saved ? JSON.parse(saved) : [];
-    }
-    return [];
-  });
 
+  // 💡 ポイント①：初期状態は空の配列にしておく
+  const [todos, setTodos] = useState<Todo[]>([]);
+
+  // 💡 ポイント②：アプリが開いたときにSupabaseからデータを取ってくる
+  // 💡 ポイント②：アプリが開いたときにSupabaseからデータを取ってくる
   useEffect(() => {
-    if (todos.length > 0) {
-      localStorage.setItem("my-todos", JSON.stringify(todos));
-    }
-  }, [todos]);
+    const fetchTodos = async () => {
+      const { data, error } = await supabase
+        .from("todos") // 先ほど作成したテーブル名「todos」
+        .select("*")
+        .order("id", { ascending: true }); // ID順に並べる
+
+      // 👇 ここのエラーのログ出力を詳しく書き換えます！
+      if (error) {
+        console.error("❌ エラーコード:", error.code);
+        console.error("❌ エラー内容:", error.message);
+        console.error("❌ エラー詳細:", error.details);
+      } else if (data) {
+        setTodos(data as Todo[]);
+      }
+    };
+
+    fetchTodos();
+  }, []);
 
   // todosを表示する前に並び替える
   const sortedTodos = [...todos].sort((a, b) => {
-    // 【ルール1】完了状態が違うなら、未完了（false）を上にする
     if (a.completed !== b.completed) {
       return Number(a.completed) - Number(b.completed);
     }
-
-    // 【ルール2】どっちも未完了（またはどっちも完了）なら、期限日を比べる
-    // 期限が設定されていないタスク（空文字）は、一番下に回す
     if (a.dueDate === "" && b.dueDate !== "") return 1;
     if (a.dueDate !== "" && b.dueDate === "") return -1;
-
-    // 両方に期限があるなら、日付が古い（締め切りが近い）ほうを上にする
-    if (a.dueDate < b.dueDate) return -1; // aを上へ
-    if (a.dueDate > b.dueDate) return 1; // bを上へ
-
-    return 0; // 同じなら順序を変えない
+    if (a.dueDate < b.dueDate) return -1;
+    if (a.dueDate > b.dueDate) return 1;
+    return 0;
   });
 
   const displayedTodos = sortedTodos.filter((todo) => {
@@ -59,37 +66,67 @@ export default function TodoApp() {
     return true;
   });
 
-  // リストに追加する
-  const handleAdd = (e: React.FormEvent) => {
+  // 💡 ポイント③：リストに追加する（Supabaseに保存）
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (inputText.trim() === "") return;
 
-    const newTodos: Todo = {
-      id: Date.now(),
-      text: inputText,
-      completed: false,
-      dueDate: inputDate,
-    };
+    // Supabaseにデータを1件挿入する
+    const { data, error } = await supabase
+      .from("todos")
+      .insert([
+        {
+          text: inputText,
+          completed: false,
+          dueDate: inputDate || "", // 空なら空文字を入れる
+        },
+      ])
+      .select(); // 挿入したデータをその場で返してもらう
 
-    setTodos([...todos, newTodos]);
-    setInputText("");
-    setInputDate("");
+    if (error) {
+      console.error("追加エラー:", error);
+    } else if (data) {
+      // 画面（State）にも反映する（Supabaseが自動で作った正しいIDが入る）
+      setTodos([...todos, data[0] as Todo]);
+      setInputText("");
+      setInputDate("");
+    }
   };
 
-  // アップデートされたTodoを受け取って、todosの状態を更新する関数
-  const handleToggle = (id: number) => {
-    setTodos(
-      todos.map((todo) => {
-        if (todo.id === id) {
-          return { ...todo, completed: !todo.completed };
-        }
-        return todo;
-      }),
-    );
+  // 💡 ポイント④：完了状態のトグル（Supabaseのデータを更新）
+  const handleToggle = async (id: number) => {
+    // 今のターゲットのタスクを探す
+    const currentTodo = todos.find((t) => t.id === id);
+    if (!currentTodo) return;
+
+    // Supabaseのデータを反転させて更新
+    const { error } = await supabase.from("todos").update({ completed: !currentTodo.completed }).eq("id", id); // このIDのデータだけを更新
+
+    if (error) {
+      console.error("更新エラー:", error);
+    } else {
+      // 画面の表示も更新
+      setTodos(
+        todos.map((todo) => {
+          if (todo.id === id) {
+            return { ...todo, completed: !todo.completed };
+          }
+          return todo;
+        }),
+      );
+    }
   };
-  // 🗑️ 指定したID以外のタスクだけを残す
-  const handleDelete = (id: number) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
+
+  // 💡 ポイント⑤：タスクを削除する（Supabaseから削除）
+  const handleDelete = async (id: number) => {
+    const { error } = await supabase.from("todos").delete().eq("id", id); // このIDのデータだけを削除
+
+    if (error) {
+      console.error("削除エラー:", error);
+    } else {
+      // 画面の表示から消す
+      setTodos(todos.filter((todo) => todo.id !== id));
+    }
   };
 
   return (
@@ -133,22 +170,21 @@ export default function TodoApp() {
           <li key={todo.id} className="border-b border-zinc-800 py-4 flex items-center gap-3">
             <input
               type="checkbox"
-              checked={todo.completed} // 💡 チェックの見た目を反映
-              onChange={() => handleToggle(todo.id)} // 💡 クリックで関数を呼ぶ！
+              checked={todo.completed}
+              onChange={() => handleToggle(todo.id)}
               className="w-5 h-5 cursor-pointer accent-blue-500"
             />
             <span className="text-gray-200">{todo.text}</span>
 
             {todo.dueDate &&
               (() => {
-                // 「期限が設定されていて」かつ「今日より前」かつ「まだ未完了」なら期限切れ！
                 const isOverdue = todo.dueDate < todayStr && !todo.completed;
 
                 return (
                   <span
                     className={`text-xs px-2 py-1 rounded-md border ml-2 ${
                       isOverdue
-                        ? "text-red-400 bg-red-500/10 border-red-500/20" // 🔴 期限切れなら赤
+                        ? "text-red-400 bg-red-500/10 border-red-500/20"
                         : "text-zinc-400 bg-zinc-950 border-zinc-800"
                     }`}
                   >
