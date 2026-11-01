@@ -74,7 +74,6 @@ export const PRESET_GOALS: { category: Category; text: string }[] = [
   { category: "仕事", text: "商工会の経営相談・セミナーに1回参加する" },
   { category: "仕事", text: "商工会の交流会・イベントで3人と名刺交換する" },
   { category: "仕事", text: "名刺と自己紹介資料（サービス内容・実績）を作る" },
-  { category: "仕事", text: "ポートフォリオサイト（nextfolio）に実績・料金・問い合わせ先を整える" },
   { category: "仕事", text: "小規模事業者向けのホームページ制作プランと料金表を作る" },
   { category: "仕事", text: "見積書・請求書・契約書のテンプレートを用意する" },
   { category: "仕事", text: "小規模事業者持続化補助金・IT導入補助金の概要を学ぶ" },
